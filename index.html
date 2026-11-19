@@ -30,6 +30,8 @@ header{display:flex;align-items:center;justify-content:space-between;margin:5px 
 <header><div><h1>倒數計時面板</h1><div class="sub">多週期同步 · 手動排序</div></div><div class="tools"><button class="smallbtn" id="resetBtn">恢復預設</button><button class="smallbtn" id="addBtn">＋自訂</button></div></header>
 <div class="grid" id="grid"></div>
 <button class="mainbtn" id="startBtn">一鍵啟動全部</button>
+<div style="display:flex;gap:8px;align-items:center;margin-top:9px"><input id="scheduledTime" type="time" style="flex:1;min-width:0;background:#202126;color:#fff;border:1px solid #393a40;border-radius:10px;padding:10px;font-size:16px"><button class="smallbtn" id="scheduleBtn">預約啟動</button><button class="smallbtn" id="cancelScheduleBtn" style="display:none">取消預約</button></div>
+<div class="sub" id="scheduleStatus" style="margin:7px 2px 0"></div>
 <div class="footer"><span id="status">待啟動</span><span>警示：15分／1分／10秒</span></div>
 <div class="modal" id="modal"><div class="dialog"><h2 id="modalTitle">調整計時時間</h2><label>名稱（例如：45分鐘）</label><input id="customName" maxlength="10" placeholder="自訂名稱"><label>時間（小時／分鐘／秒）</label><div style="display:flex;gap:8px"><input id="hours" type="number" min="0" max="99" placeholder="小時"><input id="minutes" type="number" min="0" max="59" placeholder="分鐘"><input id="seconds" type="number" min="0" max="59" placeholder="秒"></div><div class="dialogbuttons"><button class="close" id="closeModal">取消</button><button class="save" id="saveCustom">保存</button></div></div></div>
 <script>
@@ -59,7 +61,12 @@ function render(){grid.innerHTML="";document.body.classList.toggle("editing",edi
  grid.appendChild(tile);
  });document.getElementById("status").textContent=timers.filter(t=>t.active).length?`运行中 ${timers.filter(t=>t.active).length} 个`:"待启动"}
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-document.getElementById("startBtn").addEventListener("click",()=>{timers.forEach(t=>{t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.active=true;t.done=false});render()});
+function startAll(){timers.forEach(t=>{t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.active=true;t.done=false});render()}
+document.getElementById("startBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule();startAll()});
+let scheduledAt=null;
+function showSchedule(){const st=document.getElementById("scheduleStatus"),cancel=document.getElementById("cancelScheduleBtn");if(scheduledAt){st.textContent="已預約："+new Date(scheduledAt).toLocaleString();cancel.style.display="block"}else{st.textContent="";cancel.style.display="none"}}
+document.getElementById("scheduleBtn").addEventListener("click",()=>{let val=document.getElementById("scheduledTime").value;if(!val){alert("請先選擇啟動時間");return}let [hh,mm]=val.split(":").map(Number),target=new Date();target.setHours(hh,mm,0,0);if(target.getTime()<=Date.now())target.setDate(target.getDate()+1);scheduledAt=target.getTime();showSchedule()});
+document.getElementById("cancelScheduleBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule()});
 document.getElementById("resetBtn").addEventListener("click",()=>{if(!confirm("恢復原始11個預設計時器？自訂項目與排序將被清除，所有計時停止。"))return;timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,duration,remaining:duration,endAt:null,active:false,done:false}));edit=false;try{localStorage.removeItem("compactCountdownLayout")}catch(e){}render()});
 const modal=document.getElementById("modal");let editingTimerId=null;
 function openEditor(t){editingTimerId=t.id;document.getElementById("modalTitle").textContent="調整計時時間";document.getElementById("customName").value=t.name;let total=t.duration;document.getElementById("hours").value=Math.floor(total/3600);document.getElementById("minutes").value=Math.floor((total%3600)/60);document.getElementById("seconds").value=total%60;modal.classList.add("show")}
@@ -69,7 +76,7 @@ document.getElementById("saveCustom").onclick=()=>{let h=Number(document.getElem
 if(editingTimerId){let t=timers.find(x=>x.id===editingTimerId);if(t){t.name=name;t.duration=duration;t.remaining=duration;t.active=false;t.done=false;t.endAt=null}}
 else{timers.push({id:"custom"+Date.now(),name,duration,remaining:duration,endAt:null,active:false,done:false})}
 save();render();modal.classList.remove("show");editingTimerId=null};
-setInterval(()=>{timers.forEach(t=>{if(t.active&&Date.now()>=t.endAt){t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.done=false}});render()},250);
+setInterval(()=>{if(scheduledAt&&Date.now()>=scheduledAt){scheduledAt=null;showSchedule();startAll();return}timers.forEach(t=>{if(t.active&&Date.now()>=t.endAt){t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.done=false}});render()},250);
 try{let saved=JSON.parse(localStorage.getItem("compactCountdownLayout")||"null");if(saved&&Array.isArray(saved)){timers=saved.map((x,i)=>({...x,remaining:x.duration,endAt:null,active:false,done:false}));}}catch(e){}
 render();
 </script>
