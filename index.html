@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#101114">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="倒數面板">
+<title>倒數計時面板</title>
+<style>
+:root{color-scheme:dark;--bg:#101114;--card:#202126;--muted:#8c8e98;--white:#f4f5f7;--green:#25c46a;--yellow:#f3c847;--orange:#ff913d;--red:#ff4c58}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:14px 14px calc(18px + env(safe-area-inset-bottom));}
+header{display:flex;align-items:center;justify-content:space-between;margin:5px 2px 13px}h1{font-size:17px;margin:0;letter-spacing:.08em;font-weight:700}.sub{font-size:11px;color:var(--muted);margin-top:4px}.tools{display:flex;gap:7px}
+.smallbtn{border:1px solid #34353b;background:#24252b;color:#d8d9de;border-radius:10px;padding:7px 10px;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tile{background:var(--card);border:1px solid #2b2c32;border-radius:14px;padding:10px 9px 8px;min-width:0;transition:background .2s,border-color .2s;touch-action:pan-y}
+.tile.running{border-color:#44454c}.tile.warning{background:#332f20;border-color:#88722e}.tile.urgent{background:#38291e;border-color:#9c5b30}.tile.critical{background:#3a2226;border-color:#a63c47}.tile.done{opacity:.6}
+.top{display:flex;justify-content:space-between;align-items:center;gap:5px}.label{font-size:12px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:#72737b;flex:0 0 auto}.running .dot{background:var(--green)}.warning .dot{background:var(--yellow)}.urgent .dot{background:var(--orange)}.critical .dot{background:var(--red)}
+.time{font-variant-numeric:tabular-nums;font-weight:700;font-size:clamp(17px,5vw,22px);letter-spacing:-.03em;white-space:nowrap;margin:9px 0 7px}.warning .time{color:var(--yellow)}.urgent .time{color:var(--orange)}.critical .time{color:var(--red)}
+.actions{display:flex;justify-content:flex-end}.cancel{font-size:10px;padding:4px 8px;border-radius:7px;border:0;background:#383940;color:#bfc0c6;min-height:24px}.cancel:disabled{opacity:.22}
+.mainbtn{width:100%;border:0;background:var(--green);color:#07170d;font-weight:800;border-radius:13px;padding:13px 12px;font-size:15px;margin-top:12px}.mainbtn:active{opacity:.8}
+.footer{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:11px;margin-top:10px}
+.editing .tile{outline:1px dashed #777;cursor:grab}.tile.dragging{opacity:.35}.tile.dragover{outline:2px solid var(--green)}
+.modal{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:20px}.modal.show{display:flex}.dialog{width:min(360px,100%);background:#222329;border:1px solid #393a40;border-radius:18px;padding:18px}.dialog h2{font-size:16px;margin:0 0 14px}.dialog label{display:block;font-size:12px;color:#b4b5bc;margin:10px 0 5px}.dialog input{width:100%;background:#111216;border:1px solid #404149;color:white;border-radius:9px;padding:10px;font-size:16px}.dialogbuttons{display:flex;gap:8px;margin-top:15px}.dialogbuttons button{flex:1;border-radius:10px;padding:10px;border:0}.save{background:var(--green);color:#07170d;font-weight:700}.close{background:#3a3b42;color:white}
+@media(min-width:520px){body{max-width:520px;margin:0 auto}.grid{gap:10px}.tile{padding:13px}}
+</style>
+</head>
+<body>
+<header><div><h1>倒數計時面板</h1><div class="sub">多週期同步 · 手動排序</div></div><div class="tools"><button class="smallbtn" id="editBtn">排列</button><button class="smallbtn" id="addBtn">＋自訂</button></div></header>
+<div class="grid" id="grid"></div>
+<button class="mainbtn" id="startBtn">一鍵啟動全部</button>
+<div class="footer"><span id="status">待啟動</span><span>警示：15分／1分／10秒</span></div>
+<div class="modal" id="modal"><div class="dialog"><h2>新增自訂計時</h2><label>名稱（例如：45分鐘）</label><input id="customName" maxlength="10" placeholder="自訂名稱"><label>時間（小時／分鐘／秒）</label><div style="display:flex;gap:8px"><input id="hours" type="number" min="0" max="99" placeholder="小時"><input id="minutes" type="number" min="0" max="59" placeholder="分鐘"><input id="seconds" type="number" min="0" max="59" placeholder="秒"></div><div class="dialogbuttons"><button class="close" id="closeModal">取消</button><button class="save" id="saveCustom">新增</button></div></div></div>
+<script>
+const defaults=[["1分鐘",60],["5分鐘",300],["15分鐘",900],["30分鐘",1800],["1小時",3600],["2小時",7200],["3小時",10800],["4小時",14400],["6小時",21600],["8小時",28800],["12小時",43200]];
+let timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,duration,remaining:duration,endAt:null,active:false,done:false}));
+let edit=false,dragId=null;const grid=document.getElementById("grid");
+function fmt(s){s=Math.max(0,Math.ceil(s));let h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
+function save(){try{localStorage.setItem("compactCountdownLayout",JSON.stringify(timers.map(t=>({id:t.id,name:t.name,duration:t.duration}))))}catch(e){}}
+function render(){grid.innerHTML="";document.body.classList.toggle("editing",edit);timers.forEach(t=>{
+ const tile=document.createElement("div");tile.className="tile";tile.dataset.id=t.id;tile.draggable=edit;
+ let remaining=t.active?Math.max(0,(t.endAt-Date.now())/1000):t.remaining;
+ if(t.active&&remaining<=0){t.active=false;t.done=true;t.remaining=0}
+ tile.classList.toggle("running",t.active);tile.classList.toggle("done",t.done);
+ if(t.active){if(remaining<=10)tile.classList.add("critical");else if(remaining<=60)tile.classList.add("urgent");else if(remaining<=900)tile.classList.add("warning")}
+ tile.innerHTML=`<div class="top"><span class="label">${escapeHTML(t.name)}</span><span class="dot"></span></div><div class="time">${fmt(remaining)}</div><div class="actions"><button class="cancel" ${(!t.active&&!t.done)?'disabled':''} aria-label="關閉 ${escapeHTML(t.name)}">關閉</button></div>`;
+ tile.querySelector(".cancel").addEventListener("click",e=>{e.stopPropagation();t.active=false;t.done=false;t.remaining=0;t.endAt=null;render()});
+ tile.addEventListener("dragstart",e=>{dragId=t.id;tile.classList.add("dragging");e.dataTransfer.effectAllowed="move"});
+ tile.addEventListener("dragend",()=>{dragId=null;tile.classList.remove("dragging");tile.classList.remove("dragover")});
+ tile.addEventListener("dragover",e=>{if(!edit)return;e.preventDefault();tile.classList.add("dragover")});
+ tile.addEventListener("dragleave",()=>tile.classList.remove("dragover"));
+ tile.addEventListener("drop",e=>{e.preventDefault();tile.classList.remove("dragover");if(!edit||!dragId||dragId===t.id)return;let a=timers.findIndex(x=>x.id===dragId),b=timers.findIndex(x=>x.id===t.id);let [m]=timers.splice(a,1);timers.splice(b,0,m);save();render()});
+ grid.appendChild(tile);
+ });document.getElementById("status").textContent=timers.filter(t=>t.active).length?`运行中 ${timers.filter(t=>t.active).length} 个`:"待启动"}
+function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+document.getElementById("startBtn").addEventListener("click",()=>{timers.forEach(t=>{t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.active=true;t.done=false});render()});
+document.getElementById("editBtn").addEventListener("click",()=>{edit=!edit;document.getElementById("editBtn").textContent=edit?"完成":"排列";render()});
+const modal=document.getElementById("modal");document.getElementById("addBtn").onclick=()=>modal.classList.add("show");document.getElementById("closeModal").onclick=()=>modal.classList.remove("show");
+document.getElementById("saveCustom").onclick=()=>{let h=Number(document.getElementById("hours").value||0),m=Number(document.getElementById("minutes").value||0),s=Number(document.getElementById("seconds").value||0);let duration=h*3600+m*60+s;if(duration<=0){alert("請輸入大於0的時間");return}let name=document.getElementById("customName").value.trim()||fmt(duration);timers.push({id:"custom"+Date.now(),name,duration,remaining:duration,endAt:null,active:false,done:false});save();render();modal.classList.remove("show");document.getElementById("customName").value="";document.getElementById("hours").value="";document.getElementById("minutes").value="";document.getElementById("seconds").value=""};
+setInterval(()=>{timers.forEach(t=>{if(t.active&&Date.now()>=t.endAt){t.active=false;t.done=true;t.remaining=0;t.endAt=null}});render()},250);
+try{let saved=JSON.parse(localStorage.getItem("compactCountdownLayout")||"null");if(saved&&Array.isArray(saved)){timers=saved.map((x,i)=>({...x,remaining:x.duration,endAt:null,active:false,done:false}));}}catch(e){}
+render();
+</script>
+</body>
+</html>
