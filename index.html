@@ -14,7 +14,7 @@
 header{display:flex;align-items:center;justify-content:space-between;margin:5px 2px 13px}h1{font-size:17px;margin:0;letter-spacing:.08em;font-weight:700}.sub{font-size:11px;color:var(--muted);margin-top:4px}.tools{display:flex;gap:7px}
 .smallbtn{border:1px solid #34353b;background:#24252b;color:#d8d9de;border-radius:10px;padding:7px 10px;font-size:12px}
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.tile{background:var(--card);border:1px solid #2b2c32;border-radius:14px;padding:10px 9px 8px;min-width:0;transition:background .2s,border-color .2s;touch-action:pan-y}
+.tile{background:var(--card);border:1px solid #2b2c32;border-radius:14px;padding:10px 9px 8px;min-width:0;transition:background .2s,border-color .2s;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .tile.running{border-color:#44454c}.tile.warning{background:#332f20;border-color:#88722e}.tile.urgent{background:#38291e;border-color:#9c5b30}.tile.critical{background:#3a2226;border-color:#a63c47}.tile.done{opacity:.6}
 .top{display:flex;justify-content:space-between;align-items:center;gap:5px}.label{font-size:12px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:#72737b;flex:0 0 auto}.running .dot{background:var(--green)}.warning .dot{background:var(--yellow)}.urgent .dot{background:var(--orange)}.critical .dot{background:var(--red)}
 .time{font-variant-numeric:tabular-nums;font-weight:700;font-size:clamp(17px,5vw,22px);letter-spacing:-.03em;white-space:nowrap;margin:9px 0 7px}.warning .time{color:var(--yellow)}.urgent .time{color:var(--orange)}.critical .time{color:var(--red)}
@@ -27,7 +27,7 @@ header{display:flex;align-items:center;justify-content:space-between;margin:5px 
 </style>
 </head>
 <body>
-<header><div><h1>倒數計時面板</h1><div class="sub">多週期同步 · 手動排序</div></div><div class="tools"><button class="smallbtn" id="editBtn">排列</button><button class="smallbtn" id="addBtn">＋自訂</button></div></header>
+<header><div><h1>倒數計時面板</h1><div class="sub">多週期同步 · 手動排序</div></div><div class="tools"><button class="smallbtn" id="resetBtn">恢復預設</button><button class="smallbtn" id="addBtn">＋自訂</button></div></header>
 <div class="grid" id="grid"></div>
 <button class="mainbtn" id="startBtn">一鍵啟動全部</button>
 <div class="footer"><span id="status">待啟動</span><span>警示：15分／1分／10秒</span></div>
@@ -35,13 +35,13 @@ header{display:flex;align-items:center;justify-content:space-between;margin:5px 
 <script>
 const defaults=[["1分鐘",60],["5分鐘",300],["15分鐘",900],["30分鐘",1800],["1小時",3600],["2小時",7200],["3小時",10800],["4小時",14400],["6小時",21600],["8小時",28800],["12小時",43200]];
 let timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,duration,remaining:duration,endAt:null,active:false,done:false}));
-let edit=false,dragId=null;const grid=document.getElementById("grid");
+let edit=false,dragId=null,longPressTimer=null,touchDrag=false;const grid=document.getElementById("grid");
 function fmt(s){s=Math.max(0,Math.ceil(s));let h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
 function save(){try{localStorage.setItem("compactCountdownLayout",JSON.stringify(timers.map(t=>({id:t.id,name:t.name,duration:t.duration}))))}catch(e){}}
 function render(){grid.innerHTML="";document.body.classList.toggle("editing",edit);timers.forEach(t=>{
  const tile=document.createElement("div");tile.className="tile";tile.dataset.id=t.id;tile.draggable=edit;
  let remaining=t.active?Math.max(0,(t.endAt-Date.now())/1000):t.remaining;
- if(t.active&&remaining<=0){t.active=false;t.done=true;t.remaining=0}
+ if(t.active&&remaining<=0){t.remaining=0}
  tile.classList.toggle("running",t.active);tile.classList.toggle("done",t.done);
  if(t.active){if(remaining<=10)tile.classList.add("critical");else if(remaining<=60)tile.classList.add("urgent");else if(remaining<=900)tile.classList.add("warning")}
  tile.innerHTML=`<div class="top"><span class="label">${escapeHTML(t.name)}</span><span class="dot"></span></div><div class="time">${fmt(remaining)}</div><div class="actions"><button class="cancel" ${(!t.active&&!t.done)?'disabled':''} aria-label="關閉 ${escapeHTML(t.name)}">關閉</button></div>`;
@@ -52,11 +52,15 @@ function render(){grid.innerHTML="";document.body.classList.toggle("editing",edi
  tile.addEventListener("dragover",e=>{if(!edit)return;e.preventDefault();tile.classList.add("dragover")});
  tile.addEventListener("dragleave",()=>tile.classList.remove("dragover"));
  tile.addEventListener("drop",e=>{e.preventDefault();tile.classList.remove("dragover");if(!edit||!dragId||dragId===t.id)return;let a=timers.findIndex(x=>x.id===dragId),b=timers.findIndex(x=>x.id===t.id);let [m]=timers.splice(a,1);timers.splice(b,0,m);save();render()});
+ tile.addEventListener("touchstart",e=>{if(edit)return;const touch=e.touches[0];longPressTimer=setTimeout(()=>{touchDrag=true;dragId=t.id;tile.classList.add("dragging");tile.style.transform="scale(.97)";},450)},{passive:true});
+ tile.addEventListener("touchmove",e=>{if(longPressTimer&&!touchDrag){clearTimeout(longPressTimer);longPressTimer=null}if(!touchDrag)return;e.preventDefault();const touch=e.touches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest(".tile");grid.querySelectorAll(".tile").forEach(x=>x.classList.remove("dragover"));if(target&&target.dataset.id!==dragId)target.classList.add("dragover");},{passive:false});
+ tile.addEventListener("touchend",e=>{if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}if(!touchDrag)return;const touch=e.changedTouches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest(".tile");if(target&&target.dataset.id!==dragId){let a=timers.findIndex(x=>x.id===dragId),b=timers.findIndex(x=>x.id===target.dataset.id);if(a>=0&&b>=0){let [m]=timers.splice(a,1);timers.splice(b,0,m);save()}}touchDrag=false;dragId=null;render();});
+ tile.addEventListener("touchcancel",()=>{clearTimeout(longPressTimer);longPressTimer=null;touchDrag=false;dragId=null;render()});
  grid.appendChild(tile);
  });document.getElementById("status").textContent=timers.filter(t=>t.active).length?`运行中 ${timers.filter(t=>t.active).length} 个`:"待启动"}
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 document.getElementById("startBtn").addEventListener("click",()=>{timers.forEach(t=>{t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.active=true;t.done=false});render()});
-document.getElementById("editBtn").addEventListener("click",()=>{edit=!edit;document.getElementById("editBtn").textContent=edit?"完成":"排列";render()});
+document.getElementById("resetBtn").addEventListener("click",()=>{if(!confirm("恢復原始11個預設計時器？自訂項目與排序將被清除，所有計時停止。"))return;timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,duration,remaining:duration,endAt:null,active:false,done:false}));edit=false;try{localStorage.removeItem("compactCountdownLayout")}catch(e){}render()});
 const modal=document.getElementById("modal");let editingTimerId=null;
 function openEditor(t){editingTimerId=t.id;document.getElementById("modalTitle").textContent="調整計時時間";document.getElementById("customName").value=t.name;let total=t.duration;document.getElementById("hours").value=Math.floor(total/3600);document.getElementById("minutes").value=Math.floor((total%3600)/60);document.getElementById("seconds").value=total%60;modal.classList.add("show")}
 document.getElementById("addBtn").onclick=()=>{editingTimerId=null;document.getElementById("modalTitle").textContent="新增自訂計時";document.getElementById("customName").value="";document.getElementById("hours").value="";document.getElementById("minutes").value="";document.getElementById("seconds").value="";modal.classList.add("show")};
@@ -65,7 +69,7 @@ document.getElementById("saveCustom").onclick=()=>{let h=Number(document.getElem
 if(editingTimerId){let t=timers.find(x=>x.id===editingTimerId);if(t){t.name=name;t.duration=duration;t.remaining=duration;t.active=false;t.done=false;t.endAt=null}}
 else{timers.push({id:"custom"+Date.now(),name,duration,remaining:duration,endAt:null,active:false,done:false})}
 save();render();modal.classList.remove("show");editingTimerId=null};
-setInterval(()=>{timers.forEach(t=>{if(t.active&&Date.now()>=t.endAt){t.active=false;t.done=true;t.remaining=0;t.endAt=null}});render()},250);
+setInterval(()=>{timers.forEach(t=>{if(t.active&&Date.now()>=t.endAt){t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.done=false}});render()},250);
 try{let saved=JSON.parse(localStorage.getItem("compactCountdownLayout")||"null");if(saved&&Array.isArray(saved)){timers=saved.map((x,i)=>({...x,remaining:x.duration,endAt:null,active:false,done:false}));}}catch(e){}
 render();
 </script>
