@@ -1,5 +1,5 @@
 # 緊湊型多倒數計時面板
-
+https://lemon74088.github.io/lemontime1313/
 純 HTML/CSS/JavaScript，適合 GitHub Pages 與 iPhone Safari 加入主畫面。
 
 ## 使用
