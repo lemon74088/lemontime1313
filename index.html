@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="倒數面板">
-<title>倒數計時面板</title>
+<title>倒數計時面板｜修正版</title>
 <style>
 :root{color-scheme:dark;--bg:#101114;--card:#202126;--muted:#8c8e98;--white:#f4f5f7;--green:#25c46a;--yellow:#f3c847;--orange:#ff913d;--red:#ff4c58}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--white);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:14px 14px calc(18px + env(safe-area-inset-bottom));}
@@ -77,8 +77,29 @@ document.getElementById("saveCustom").onclick=()=>{let h=Number(document.getElem
 if(editingTimerId){let t=timers.find(x=>x.id===editingTimerId);if(t){t.name=name;t.duration=duration;t.remaining=duration;t.active=false;t.done=false;t.endAt=null}}
 else{timers.push({id:"custom"+Date.now(),name,duration,remaining:duration,endAt:null,active:false,done:false})}
 save();render();modal.classList.remove("show");editingTimerId=null};
-setInterval(()=>{const now=Date.now();if(scheduledAt&&now>=scheduledAt){scheduledAt=null;showSchedule();startAll();return}timers.forEach(t=>{if(t.active&&now>=t.endAt){const late=Math.max(0,now-t.endAt);t.endAt=now+(t.duration*1000-(late%(t.duration*1000)));t.remaining=t.duration;t.done=false}});render()},250);
-try{let saved=JSON.parse(localStorage.getItem("compactCountdownLayout")||"null");if(saved&&Array.isArray(saved)){timers=saved.map((x,i)=>({...x,remaining:x.duration,endAt:null,active:false,done:false}));}}catch(e){}
+function advanceTimerCycle(t,now){
+  if(!t.active||!t.endAt||now<t.endAt)return;
+  const cycle=Math.max(1,t.duration)*1000;
+  // Advance from the previous scheduled end, not from the delayed polling time.
+  const missed=Math.floor((now-t.endAt)/cycle)+1;
+  t.endAt+=missed*cycle;
+  t.remaining=t.duration;
+  t.done=false;
+}
+setInterval(()=>{
+  const now=Date.now();
+  if(scheduledAt&&now>=scheduledAt){scheduledAt=null;showSchedule();startAll();return}
+  timers.forEach(t=>advanceTimerCycle(t,now));
+  render();
+},100);
+try{
+ let saved=JSON.parse(localStorage.getItem("compactCountdownLayout")||"null");
+ if(saved&&Array.isArray(saved)){
+   const normalized=saved.filter(x=>x&&typeof x.name==="string"&&Number.isFinite(Number(x.duration))&&Number(x.duration)>0)
+    .map(x=>({id:String(x.id||("saved"+i)),name:x.name,duration:Number(x.duration),remaining:Number(x.duration),endAt:null,active:false,done:false}));
+   if(normalized.length)timers=normalized;
+ }
+}catch(e){}
 render();
 </script>
 </body>
