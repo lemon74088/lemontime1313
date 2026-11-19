@@ -54,12 +54,40 @@ function render(){grid.innerHTML="";document.body.classList.toggle("editing",edi
  tile.addEventListener("dragover",e=>{if(!edit)return;e.preventDefault();tile.classList.add("dragover")});
  tile.addEventListener("dragleave",()=>tile.classList.remove("dragover"));
  tile.addEventListener("drop",e=>{e.preventDefault();tile.classList.remove("dragover");if(!edit||!dragId||dragId===t.id)return;let a=timers.findIndex(x=>x.id===dragId),b=timers.findIndex(x=>x.id===t.id);let [m]=timers.splice(a,1);timers.splice(b,0,m);save();render()});
- tile.addEventListener("touchstart",e=>{if(edit)return;const touch=e.touches[0];longPressTimer=setTimeout(()=>{touchDrag=true;dragId=t.id;tile.classList.add("dragging");tile.style.transform="scale(.97)";},450)},{passive:true});
- tile.addEventListener("touchmove",e=>{if(longPressTimer&&!touchDrag){clearTimeout(longPressTimer);longPressTimer=null}if(!touchDrag)return;e.preventDefault();const touch=e.touches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest(".tile");grid.querySelectorAll(".tile").forEach(x=>x.classList.remove("dragover"));if(target&&target.dataset.id!==dragId)target.classList.add("dragover");},{passive:false});
+ tile.addEventListener("touchstart",e=>{if(edit||e.touches.length!==1)return;const touch=e.touches[0];const sx=touch.clientX,sy=touch.clientY;longPressTimer=setTimeout(()=>{touchDrag=true;dragId=t.id;tile.classList.add("dragging");tile.style.transform="scale(.97)";},550);tile._pressOrigin={x:sx,y:sy}},{passive:true});
+ tile.addEventListener("touchmove",e=>{if(longPressTimer&&!touchDrag&&tile._pressOrigin){const touch=e.touches[0];if(Math.abs(touch.clientX-tile._pressOrigin.x)>12||Math.abs(touch.clientY-tile._pressOrigin.y)>12){clearTimeout(longPressTimer);longPressTimer=null}}if(!touchDrag)return;e.preventDefault();const touch=e.touches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest(".tile");grid.querySelectorAll(".tile").forEach(x=>x.classList.remove("dragover"));if(target&&target.dataset.id!==dragId)target.classList.add("dragover");},{passive:false});
  tile.addEventListener("touchend",e=>{if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}if(!touchDrag)return;const touch=e.changedTouches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest(".tile");if(target&&target.dataset.id!==dragId){let a=timers.findIndex(x=>x.id===dragId),b=timers.findIndex(x=>x.id===target.dataset.id);if(a>=0&&b>=0){let [m]=timers.splice(a,1);timers.splice(b,0,m);save()}}touchDrag=false;dragId=null;render();});
  tile.addEventListener("touchcancel",()=>{clearTimeout(longPressTimer);longPressTimer=null;touchDrag=false;dragId=null;render()});
  grid.appendChild(tile);
  });document.getElementById("status").textContent=timers.filter(t=>t.active).length?`运行中 ${timers.filter(t=>t.active).length} 个`:"待启动"}
+function updateDisplay(){
+  const now=Date.now();
+  timers.forEach(t=>{
+    const tile=grid.querySelector(`[data-id="${CSS.escape(t.id)}"]`);
+    if(!tile)return;
+    const remaining=t.active?Math.max(0,(t.endAt-now)/1000):t.remaining;
+    const timeEl=tile.querySelector(".time");
+    const finishEl=tile.querySelector(".localfinish");
+    if(timeEl)timeEl.textContent=fmt(remaining);
+    if(finishEl)finishEl.textContent=t.active?"結束時間："+new Date(t.endAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}):"本機時間：--:--:--";
+    tile.classList.toggle("running",t.active);
+    tile.classList.toggle("done",t.done);
+    tile.classList.remove("greenAlert","warning","urgent","critical");
+    if(t.active){
+      if(remaining<=10)tile.classList.add("critical");
+      else if(remaining<=60)tile.classList.add("urgent");
+      else if(remaining<=900)tile.classList.add("warning");
+      else if(remaining<=2400)tile.classList.add("greenAlert");
+    }
+    const btn=tile.querySelector(".cancel");
+    if(btn){
+      btn.textContent=t.active?"關閉":"啟動";
+      btn.setAttribute("aria-label",(t.active?"關閉":"啟動")+" "+t.name);
+      btn.classList.toggle("startBtn",!t.active);
+    }
+  });
+  document.getElementById("status").textContent=timers.some(t=>t.active)?`運行中 ${timers.filter(t=>t.active).length} 個`:"待啟動";
+}
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function startAll(){timers.forEach(t=>{t.remaining=t.duration;t.endAt=Date.now()+t.duration*1000;t.active=true;t.done=false});render()}
 document.getElementById("startBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule();startAll()});
@@ -77,6 +105,21 @@ document.getElementById("saveCustom").onclick=()=>{let h=Number(document.getElem
 if(editingTimerId){let t=timers.find(x=>x.id===editingTimerId);if(t){t.name=name;t.duration=duration;t.remaining=duration;t.active=false;t.done=false;t.endAt=null}}
 else{timers.push({id:"custom"+Date.now(),name,duration,remaining:duration,endAt:null,active:false,done:false})}
 save();render();modal.classList.remove("show");editingTimerId=null};
+function updateLiveUI(){
+  timers.forEach(t=>{
+    const tile=grid.querySelector(`[data-id="${CSS.escape(t.id)}"]`);
+    if(!tile)return;
+    const remaining=t.active?Math.max(0,(t.endAt-Date.now())/1000):t.remaining;
+    const timeEl=tile.querySelector('.time'),finishEl=tile.querySelector('.localfinish');
+    if(timeEl)timeEl.textContent=fmt(remaining);
+    if(finishEl)finishEl.textContent=t.active?"結束時間："+new Date(t.endAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}):"本機時間：--:--:--";
+    tile.classList.toggle('running',t.active);tile.classList.toggle('done',t.done);
+    tile.classList.remove('greenAlert','warning','urgent','critical');
+    if(t.active){if(remaining<=10)tile.classList.add('critical');else if(remaining<=60)tile.classList.add('urgent');else if(remaining<=900)tile.classList.add('warning');else if(remaining<=2400)tile.classList.add('greenAlert')}
+    const btn=tile.querySelector('.cancel');if(btn){btn.textContent=t.active?'關閉':'啟動';btn.classList.toggle('startBtn',!t.active);btn.setAttribute('aria-label',(t.active?'關閉':'啟動')+' '+t.name)}
+  });
+  document.getElementById('status').textContent=timers.filter(t=>t.active).length?`運行中 ${timers.filter(t=>t.active).length} 個`:'待啟動';
+}
 function advanceTimerCycle(t,now){
   if(!t.active||!t.endAt||now<t.endAt)return;
   const cycle=Math.max(1,t.duration)*1000;
@@ -90,8 +133,8 @@ setInterval(()=>{
   const now=Date.now();
   if(scheduledAt&&now>=scheduledAt){scheduledAt=null;showSchedule();startAll();return}
   timers.forEach(t=>advanceTimerCycle(t,now));
-  render();
-},100);
+  updateLiveUI();
+},250);
 try{
  let saved=JSON.parse(localStorage.getItem("compactCountdownLayout")||"null");
  if(saved&&Array.isArray(saved)){
