@@ -40,6 +40,7 @@ let timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,defaultName:name,de
 let edit=false,dragId=null,longPressTimer=null,touchDrag=false;const grid=document.getElementById("grid");
 function fmt(s){s=Math.max(0,Math.ceil(s));let h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
 function save(){try{localStorage.setItem("compactCountdownLayout",JSON.stringify(timers.map(t=>({id:t.id,name:t.name,duration:t.duration}))))}catch(e){}}
+function saveRuntime(){try{localStorage.setItem("compactCountdownRuntime",JSON.stringify({timers:timers.map(t=>({id:t.id,active:t.active,endAt:t.endAt,startAt:t.startAt,remaining:t.remaining,done:t.done})),scheduledAt}))}catch(e){}}
 function render(){grid.innerHTML="";document.body.classList.toggle("editing",edit);timers.forEach(t=>{
  const tile=document.createElement("div");tile.className="tile";tile.dataset.id=t.id;tile.draggable=edit;
  let remaining=t.active?Math.max(0,(t.endAt-Date.now())/1000):t.remaining;
@@ -47,7 +48,7 @@ function render(){grid.innerHTML="";document.body.classList.toggle("editing",edi
  tile.classList.toggle("running",t.active);tile.classList.toggle("done",t.done);
  if(t.active){if(remaining<=10)tile.classList.add("critical");else if(remaining<=60)tile.classList.add("urgent");else if(remaining<=900)tile.classList.add("warning");else if(remaining<=2400)tile.classList.add("greenAlert")}
  tile.innerHTML=`<div class="top"><span class="label">${escapeHTML(t.name)}</span><span class="dot"></span></div><div class="time">${fmt(remaining)}</div><div class="localfinish">${t.active?"結束時間："+new Date(t.endAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}):"本機時間：--:--:--"}</div><div class="actions"><button class="cancel ${t.active?'':'startBtn'}" aria-label="${t.active?'關閉':'啟動'} ${escapeHTML(t.name)}">${t.active?'關閉':'啟動'}</button></div>`;
- tile.querySelector(".cancel").addEventListener("click",e=>{e.stopPropagation();if(t.active){t.active=false;t.done=false;t.remaining=0;t.endAt=null;t.startAt=null}else{const anchor=Date.now();t.remaining=t.duration;t.startAt=anchor;t.endAt=anchor+t.duration*1000;t.active=true;t.done=false}render()});
+ tile.querySelector(".cancel").addEventListener("click",e=>{e.stopPropagation();if(t.active){t.active=false;t.done=false;t.remaining=0;t.endAt=null;t.startAt=null}else{const anchor=Date.now();t.remaining=t.duration;t.startAt=anchor;t.endAt=anchor+t.duration*1000;t.active=true;t.done=false}saveRuntime();render()});
  tile.addEventListener("click",e=>{if(edit||e.target.closest(".cancel")||tile._touchHandled)return;openEditor(t)});
  tile.addEventListener("dragstart",e=>{dragId=t.id;tile.classList.add("dragging");e.dataTransfer.effectAllowed="move"});
  tile.addEventListener("dragend",()=>{dragId=null;tile.classList.remove("dragging");tile.classList.remove("dragover")});
@@ -89,14 +90,14 @@ function updateDisplay(){
   document.getElementById("status").textContent=timers.some(t=>t.active)?`運行中 ${timers.filter(t=>t.active).length} 個`:"待啟動";
 }
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function startAll(anchor=Date.now()){timers.forEach(t=>{t.startAt=anchor;t.remaining=t.duration;t.endAt=anchor+t.duration*1000;t.active=true;t.done=false});render()}
+function startAll(anchor=Date.now()){timers.forEach(t=>{t.startAt=anchor;t.remaining=t.duration;t.endAt=anchor+t.duration*1000;t.active=true;t.done=false});saveRuntime();render()}
 document.getElementById("startBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule();startAll()});
-document.getElementById("stopAllBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule();timers.forEach(t=>{t.active=false;t.done=false;t.remaining=t.duration;t.endAt=null;t.startAt=null});render()});
+document.getElementById("stopAllBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule();timers.forEach(t=>{t.active=false;t.done=false;t.remaining=t.duration;t.endAt=null;t.startAt=null});saveRuntime();render()});
 let scheduledAt=null;
 function showSchedule(){const st=document.getElementById("scheduleStatus"),cancel=document.getElementById("cancelScheduleBtn");if(scheduledAt){st.textContent="已預約："+new Date(scheduledAt).toLocaleString();cancel.style.display="block"}else{st.textContent="";cancel.style.display="none"}}
-document.getElementById("scheduleBtn").addEventListener("click",()=>{let val=document.getElementById("scheduledTime").value;if(!val){alert("請先選擇啟動時間");return}let [hh,mm]=val.split(":").map(Number),target=new Date();target.setHours(hh,mm,0,0);if(target.getTime()<=Date.now())target.setDate(target.getDate()+1);scheduledAt=target.getTime();showSchedule()});
-document.getElementById("cancelScheduleBtn").addEventListener("click",()=>{scheduledAt=null;showSchedule()});
-document.getElementById("resetBtn").addEventListener("click",()=>{if(!confirm("恢復原始11個預設計時器？自訂項目與排序將被清除，所有計時停止。"))return;scheduledAt=null;showSchedule();timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,defaultName:name,defaultDuration:duration,duration,remaining:duration,endAt:null,startAt:null,active:false,done:false}));edit=false;try{localStorage.removeItem("compactCountdownLayout")}catch(e){}render()});
+document.getElementById("scheduleBtn").addEventListener("click",()=>{let val=document.getElementById("scheduledTime").value;if(!val){alert("請先選擇啟動時間");return}let [hh,mm]=val.split(":").map(Number),target=new Date();target.setHours(hh,mm,0,0);if(target.getTime()<=Date.now())target.setDate(target.getDate()+1);scheduledAt=target.getTime();saveRuntime();showSchedule()});
+document.getElementById("cancelScheduleBtn").addEventListener("click",()=>{scheduledAt=null;saveRuntime();showSchedule()});
+document.getElementById("resetBtn").addEventListener("click",()=>{if(!confirm("恢復原始11個預設計時器？自訂項目與排序將被清除，所有計時停止。"))return;scheduledAt=null;showSchedule();timers=defaults.map(([name,duration],i)=>({id:"t"+i,name,defaultName:name,defaultDuration:duration,duration,remaining:duration,endAt:null,startAt:null,active:false,done:false}));edit=false;try{localStorage.removeItem("compactCountdownLayout");localStorage.removeItem("compactCountdownRuntime")}catch(e){}render()});
 const modal=document.getElementById("modal");let editingTimerId=null;
 function openEditor(t){editingTimerId=t.id;document.getElementById("modalTitle").textContent="調整計時時間";document.getElementById("customName").value=t.name;let total=t.duration;document.getElementById("hours").value=Math.floor(total/3600);document.getElementById("minutes").value=Math.floor((total%3600)/60);document.getElementById("seconds").value=total%60;document.getElementById("restoreOriginalWrap").style.display=Number.isFinite(t.defaultDuration)?"block":"none";if(Number.isFinite(t.defaultDuration))document.getElementById("restoreOriginalBtn").textContent="恢復原始預設（"+t.defaultName+"）";modal.classList.add("show")}
 document.getElementById("addBtn").onclick=()=>{editingTimerId=null;document.getElementById("modalTitle").textContent="新增自訂計時";document.getElementById("customName").value="";document.getElementById("hours").value="";document.getElementById("minutes").value="";document.getElementById("seconds").value="";document.getElementById("restoreOriginalWrap").style.display="none";modal.classList.add("show")};
@@ -105,7 +106,7 @@ document.getElementById("restoreOriginalBtn").onclick=()=>{const t=timers.find(x
 document.getElementById("saveCustom").onclick=()=>{let h=Number(document.getElementById("hours").value||0),m=Number(document.getElementById("minutes").value||0),s=Number(document.getElementById("seconds").value||0);let duration=h*3600+m*60+s;if(duration<=0){alert("請輸入大於0的時間");return}let name=document.getElementById("customName").value.trim()||fmt(duration);
 if(editingTimerId){let t=timers.find(x=>x.id===editingTimerId);if(t){t.name=name;t.duration=duration;t.remaining=duration;t.active=false;t.done=false;t.endAt=null;t.startAt=null}}
 else{timers.push({id:"custom"+Date.now(),name,defaultName:null,defaultDuration:null,duration,remaining:duration,endAt:null,startAt:null,active:false,done:false})}
-save();render();modal.classList.remove("show");editingTimerId=null};
+save();saveRuntime();render();modal.classList.remove("show");editingTimerId=null};
 function updateLiveUI(){
   timers.forEach(t=>{
     const tile=grid.querySelector(`[data-id="${CSS.escape(t.id)}"]`);
@@ -135,7 +136,8 @@ function advanceTimerCycle(t,now){
 setInterval(()=>{
   const now=Date.now();
   if(scheduledAt&&now>=scheduledAt){const anchor=scheduledAt;scheduledAt=null;showSchedule();startAll(anchor);return}
-  timers.forEach(t=>advanceTimerCycle(t,now));
+  let cycled=false;timers.forEach(t=>{const before=t.endAt;advanceTimerCycle(t,now);if(t.endAt!==before)cycled=true});
+  if(cycled)saveRuntime();
   updateLiveUI();
 },250);
 try{
@@ -146,6 +148,15 @@ try{
    if(normalized.length)timers=normalized;
  }
 }catch(e){}
+try{
+ const runtime=JSON.parse(localStorage.getItem("compactCountdownRuntime")||"null");
+ if(runtime&&Array.isArray(runtime.timers)){
+   runtime.timers.forEach(r=>{const t=timers.find(x=>x.id===r.id);if(t){t.active=!!r.active;t.endAt=r.endAt==null?null:Number(r.endAt);t.startAt=r.startAt==null?null:Number(r.startAt);t.remaining=Number.isFinite(Number(r.remaining))?Number(r.remaining):t.duration;t.done=!!r.done}});
+   scheduledAt=runtime.scheduledAt==null?null:Number(runtime.scheduledAt);showSchedule();
+ }
+}catch(e){}
+window.addEventListener("pagehide",saveRuntime);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")saveRuntime();else{const now=Date.now();timers.forEach(t=>advanceTimerCycle(t,now));updateLiveUI();saveRuntime()}});
 render();
 </script>
 </body>
